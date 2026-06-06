@@ -323,6 +323,8 @@ func main() {
 				)
 				continue
 			}
+		} else if len(inputBuffer.Buffer) == 0 {
+				continue
 		}
 
 		var statement Statement
