@@ -42,6 +42,7 @@ type ExecuteResult int
 const (
 	ExecuteSuccess ExecuteResult = iota
 	ExecuteTableFull
+	ExecuteDuplicateKey
 )
 
 type MetaCommandResult int
@@ -249,6 +250,21 @@ func executeInsert(
 		return ExecuteTableFull
 	}
 
+	idToInsert := statement.RowToInsert.ID
+
+	var existingRow Row
+
+	for i := uint32(0); i < table.NumRows; i++ {
+		deserializeRow(
+			rowSlot(table, i),
+			&existingRow,
+		)
+
+		if existingRow.ID == idToInsert {
+			return ExecuteDuplicateKey
+		}
+	}
+
 	serializeRow(
 		&statement.RowToInsert,
 		rowSlot(table, table.NumRows),
@@ -349,17 +365,18 @@ func main() {
 			)
 			continue
 		}
-
-		switch executeStatement(
-			&statement,
-			table,
-		) {
+		
+		switch executeStatement(&statement, table) {
 
 		case ExecuteSuccess:
 			fmt.Println("Executed.")
 
 		case ExecuteTableFull:
 			fmt.Println("Error: Table full.")
+
+		case ExecuteDuplicateKey:
+			fmt.Println("Error: Duplicate key.")
+			
 		}
 	}
 }
