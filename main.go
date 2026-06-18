@@ -4,136 +4,135 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"strings"
 )
-
-func printPrompt() {
-	fmt.Print("db > ")
-}
 
 func main() {
 
 	if len(os.Args) < 2 {
-
-		fmt.Println(
-			"Must supply a database filename.",
-		)
-
+		fmt.Println("Must supply database filename.")
 		os.Exit(1)
 	}
 
-	table, err :=
-		dbOpen(os.Args[1])
+	table, err := OpenTable(os.Args[1])
 
 	if err != nil {
 		panic(err)
 	}
 
-	defer dbClose(table)
-
-	reader :=
-		bufio.NewReader(os.Stdin)
+	scanner := bufio.NewScanner(os.Stdin)
 
 	for {
 
-		printPrompt()
+		fmt.Print("db > ")
 
-		input, err :=
-			reader.ReadString('\n')
+		if !scanner.Scan() {
+			break
+		}
 
-		if err != nil {
-			fmt.Println(err)
+		input := scanner.Text()
+
+		if input == "" {
 			continue
 		}
 
-		input =
-			strings.TrimSpace(input)
+		switch input {
 
-		if len(input) == 0 {
-			continue
-		}
-
-		if input[0] == '.' {
-
-			switch input {
-
-			case ".exit":
+		case ".exit":
+				_ = table.Close()
 				return
 
-			case ".btree":
-
-				fmt.Println("Tree:")
-
-				printLeafNode(
-					getPage(
-						table.pager,
-						table.rootPageNum,
-					),
+		case ".btree":
+				root := table.Pager.GetPage(
+						table.RootPageNum,
 				)
 
+				PrintLeafNode(root)
 				continue
 
-			case ".constants":
-
-				fmt.Println("Constants:")
-
-				printConstants()
-
+		case ".constants":
+				PrintConstants()
 				continue
+		}
 
-			default:
+		var stmt Statement
+
+		err := PrepareStatement(
+			input,
+			&stmt,
+		)
+
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+
+		switch stmt.Type {
+
+		case StatementInsert:
+
+    row := stmt.RowToInsert
+
+    cursor := TableFind(
+      table,
+      row.ID,
+    )
+
+    root := table.Pager.GetPage(
+      table.RootPageNum,
+    )
+
+    numCells := LeafNodeNumCells(root)
+
+    if cursor.CellNum < numCells {
+
+        keyAtIndex := LeafNodeKey(
+          root,
+          cursor.CellNum,
+        )
+
+        if keyAtIndex == row.ID {
+          fmt.Println(
+            "Error: Duplicate key.",
+          )
+          continue
+        }
+    }
+
+    err := LeafNodeInsert(
+      cursor,
+      row.ID,
+      &row,
+    )
+
+    if err != nil {
+        fmt.Println(err)
+        continue
+    }
+
+    fmt.Println("Executed.")
+
+		case StatementSelect:
+
+			cursor := TableStart(table)
+
+			for !cursor.EndOfTable {
+
+				row :=
+					DeserializeRow(
+						cursor.Value(),
+					)
 
 				fmt.Printf(
-					"Unrecognized command '%s'\n",
-					input,
+					"(%d, %s, %s)\n",
+					row.ID,
+					row.Username,
+					row.Email,
 				)
 
-				continue
-			}
-		}
-
-		var statement Statement
-
-		err =
-			prepareStatement(
-				input,
-				&statement,
-			)
-
-		if err != nil {
-
-			fmt.Println(err)
-
-			continue
-		}
-
-		err =
-			executeStatement(
-				&statement,
-				table,
-			)
-
-		if err != nil {
-
-			switch err.Error() {
-
-			case "duplicate key":
-				fmt.Println(
-					"Error: Duplicate key.",
-				)
-
-			case "table full":
-				fmt.Println(
-					"Error: Table full.",
-				)
-
-			default:
-				fmt.Println(err)
+				cursor.Advance()
 			}
 
-			continue
+			fmt.Println("Executed.")
 		}
-
-		fmt.Println("Executed.")
 	}
 }

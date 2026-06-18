@@ -1,165 +1,140 @@
 package main
 
 import (
+	"fmt"
 	"encoding/binary"
 )
 
 type NodeType uint8
 
 const (
-	NODE_INTERNAL NodeType = iota
-	NODE_LEAF
-)
-
-/*
- * Common Node Header Layout
- */
-
-const (
-	NODE_TYPE_SIZE = 1
-	NODE_TYPE_OFFSET = 0
-
-	IS_ROOT_SIZE = 1
-	IS_ROOT_OFFSET = NODE_TYPE_OFFSET + NODE_TYPE_SIZE
-
-	PARENT_POINTER_SIZE = 4
-	PARENT_POINTER_OFFSET =
-		IS_ROOT_OFFSET + IS_ROOT_SIZE
-
-	COMMON_NODE_HEADER_SIZE =
-		NODE_TYPE_SIZE +
-			IS_ROOT_SIZE +
-			PARENT_POINTER_SIZE
-)
-
-/*
- * Leaf Node Header Layout
- */
-
-const (
-	LEAF_NODE_NUM_CELLS_SIZE = 4
-
-	LEAF_NODE_NUM_CELLS_OFFSET =
-		COMMON_NODE_HEADER_SIZE
-
-	LEAF_NODE_HEADER_SIZE =
-		COMMON_NODE_HEADER_SIZE +
-			LEAF_NODE_NUM_CELLS_SIZE
-)
-
-/*
- * Leaf Node Body Layout
- */
-
-const (
-	LEAF_NODE_KEY_SIZE = 4
-	LEAF_NODE_KEY_OFFSET = 0
-
-	LEAF_NODE_VALUE_SIZE = ROW_SIZE
-
-	LEAF_NODE_VALUE_OFFSET =
-		LEAF_NODE_KEY_OFFSET +
-			LEAF_NODE_KEY_SIZE
-
-	LEAF_NODE_CELL_SIZE =
-		LEAF_NODE_KEY_SIZE +
-			LEAF_NODE_VALUE_SIZE
+	NodeInternal NodeType = iota
+	NodeLeaf
 )
 
 const (
-	PAGE_SIZE = 4096
+	NodeTypeOffset = 0
+	NodeTypeSize   = 1
+
+	IsRootOffset = 1
+	IsRootSize   = 1
+
+	ParentOffset = 2
+	ParentSize   = 4
+
+	CommonNodeHeaderSize = 6
 )
 
 const (
-	LEAF_NODE_SPACE_FOR_CELLS =
-		PAGE_SIZE -
-			LEAF_NODE_HEADER_SIZE
+	LeafNodeNumCellsOffset = CommonNodeHeaderSize
+	LeafNodeNumCellsSize   = 4
 
-	LEAF_NODE_MAX_CELLS =
-		LEAF_NODE_SPACE_FOR_CELLS /
-			LEAF_NODE_CELL_SIZE
+	LeafNodeHeaderSize = CommonNodeHeaderSize + LeafNodeNumCellsSize
 )
 
-func leafNodeNumCells(node []byte) uint32 {
+const (
+	LeafNodeKeySize   = 4
+	LeafNodeValueSize = RowSize
+
+	LeafNodeCellSize = LeafNodeKeySize + LeafNodeValueSize
+
+	LeafNodeSpaceForCells = PageSize - LeafNodeHeaderSize
+
+	LeafNodeMaxCells = LeafNodeSpaceForCells / LeafNodeCellSize
+)
+
+func GetNodeType(node []byte) NodeType {
+	return NodeType(node[NodeTypeOffset])
+}
+
+func SetNodeType(node []byte, t NodeType) {
+	node[NodeTypeOffset] = byte(t)
+}
+
+func InitializeLeafNode(node []byte) {
+
+	SetNodeType(node, NodeLeaf)
+
+	SetLeafNodeNumCells(node, 0)
+}
+
+func LeafNodeNumCells(node []byte) uint32 {
 	return binary.LittleEndian.Uint32(
-		node[
-			LEAF_NODE_NUM_CELLS_OFFSET :
-				LEAF_NODE_NUM_CELLS_OFFSET+
-					LEAF_NODE_NUM_CELLS_SIZE],
+		node[LeafNodeNumCellsOffset:],
 	)
 }
 
-func setLeafNodeNumCells(
+func SetLeafNodeNumCells(
 	node []byte,
 	value uint32,
 ) {
 	binary.LittleEndian.PutUint32(
-		node[
-			LEAF_NODE_NUM_CELLS_OFFSET :
-				LEAF_NODE_NUM_CELLS_OFFSET+
-					LEAF_NODE_NUM_CELLS_SIZE],
+		node[LeafNodeNumCellsOffset:],
 		value,
 	)
 }
 
-func leafNodeCell(
+func LeafNodeCell(
 	node []byte,
 	cellNum uint32,
 ) []byte {
-	offset :=
-		LEAF_NODE_HEADER_SIZE +
-			cellNum*LEAF_NODE_CELL_SIZE
+
+	offset := LeafNodeHeaderSize + int(cellNum)*LeafNodeCellSize
 
 	return node[offset:]
 }
 
-func leafNodeKey(
+func LeafNodeKey(
 	node []byte,
 	cellNum uint32,
 ) uint32 {
 
-	offset :=
-		LEAF_NODE_HEADER_SIZE +
-			cellNum*LEAF_NODE_CELL_SIZE
+	offset := LeafNodeHeaderSize + int(cellNum)*LeafNodeCellSize
 
 	return binary.LittleEndian.Uint32(
-		node[offset : offset+4],
+		node[offset:],
 	)
 }
 
-func setLeafNodeKey(
+func SetLeafNodeKey(
 	node []byte,
 	cellNum uint32,
 	key uint32,
 ) {
-	offset :=
-		LEAF_NODE_HEADER_SIZE +
-			cellNum*LEAF_NODE_CELL_SIZE
+
+	offset := LeafNodeHeaderSize + int(cellNum)*LeafNodeCellSize
 
 	binary.LittleEndian.PutUint32(
-		node[offset:offset+4],
+		node[offset:],
 		key,
 	)
 }
 
-func leafNodeValue(
+func LeafNodeValue(
 	node []byte,
 	cellNum uint32,
 ) []byte {
 
-	offset :=
-		LEAF_NODE_HEADER_SIZE +
-			cellNum*LEAF_NODE_CELL_SIZE +
-			LEAF_NODE_KEY_SIZE
+	offset := LeafNodeHeaderSize + int(cellNum)*LeafNodeCellSize + LeafNodeKeySize
 
-	return node[offset : offset+ROW_SIZE]
+	return node[offset:]
 }
 
-func initializeLeafNode(
-	node []byte,
-) {
-	node[NODE_TYPE_OFFSET] =
-		byte(NODE_LEAF)
+func PrintLeafNode(node []byte) {
+    numCells := LeafNodeNumCells(node)
 
-	setLeafNodeNumCells(node, 0)
+    fmt.Printf(
+        "leaf (size %d)\n",
+        numCells,
+    )
+
+    for i := uint32(0); i < numCells; i++ {
+        key := LeafNodeKey(node, i)
+
+        fmt.Printf(
+            "  - %d : %d\n",
+            i,
+            key,
+        )
+    }
 }

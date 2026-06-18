@@ -1,116 +1,42 @@
 package main
 
 type Cursor struct {
-	table      *Table
-	pageNum    uint32
-	cellNum    uint32
-	endOfTable bool
+	Table      *Table
+	PageNum    uint32
+	CellNum    uint32
+	EndOfTable bool
 }
 
-func tableStart(
-	table *Table,
-) *Cursor {
+func TableStart(table *Table) *Cursor {
 
 	cursor := &Cursor{
-		table:   table,
-		pageNum: table.rootPageNum,
-		cellNum: 0,
+		Table:   table,
+		PageNum: table.RootPageNum,
+		CellNum: 0,
 	}
 
-	rootNode :=
-		getPage(
-			table.pager,
-			table.rootPageNum,
-		)
+	root := table.Pager.GetPage(0)
 
-	numCells :=
-		leafNodeNumCells(rootNode)
-
-	cursor.endOfTable =
-		numCells == 0
+	cursor.EndOfTable =
+		LeafNodeNumCells(root) == 0
 
 	return cursor
 }
 
-func tableEnd(
-	table *Table,
-) *Cursor {
+func (c *Cursor) Value() []byte {
 
-	rootNode :=
-		getPage(
-			table.pager,
-			table.rootPageNum,
-		)
+	page := c.Table.Pager.GetPage(c.PageNum)
 
-	numCells :=
-		leafNodeNumCells(rootNode)
-
-	return &Cursor{
-		table:      table,
-		pageNum:    table.rootPageNum,
-		cellNum:    numCells,
-		endOfTable: true,
-	}
+	return LeafNodeValue(page, c.CellNum)
 }
 
-func cursorValue(
-	cursor *Cursor,
-) []byte {
+func (c *Cursor) Advance() {
 
-	page :=
-		getPage(
-			cursor.table.pager,
-			cursor.pageNum,
-		)
+	page := c.Table.Pager.GetPage(c.PageNum)
 
-	return leafNodeValue(
-		page,
-		cursor.cellNum,
-	)
-}
+	c.CellNum++
 
-func cursorAdvance(
-	cursor *Cursor,
-) {
-
-	page :=
-		getPage(
-			cursor.table.pager,
-			cursor.pageNum,
-		)
-
-	cursor.cellNum++
-
-	if cursor.cellNum >=
-		leafNodeNumCells(page) {
-
-		cursor.endOfTable = true
+	if c.CellNum >= LeafNodeNumCells(page) {
+		c.EndOfTable = true
 	}
-}
-
-func tableFindByID(
-	table *Table,
-	id uint32,
-) bool {
-
-	cursor := tableStart(table)
-	defer func() {}()
-
-	var row Row
-
-	for !cursor.endOfTable {
-
-		deserializeRow(
-			cursorValue(cursor),
-			&row,
-		)
-
-		if row.ID == id {
-			return true
-		}
-
-		cursorAdvance(cursor)
-	}
-
-	return false
 }

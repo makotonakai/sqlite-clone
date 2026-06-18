@@ -1,80 +1,153 @@
 package main
 
-import (
-	"fmt"
-)
+import "errors"
 
 type Table struct {
-	pager       *Pager
-	rootPageNum uint32
+	Pager       *Pager
+	RootPageNum uint32
 }
 
-func dbOpen(filename string) (*Table, error) {
-
-	pager, err := pagerOpen(filename)
+func OpenTable(filename string) (*Table, error) {
+	pager, err := OpenPager(filename)
 	if err != nil {
 		return nil, err
 	}
 
 	table := &Table{
-		pager:       pager,
-		rootPageNum: 0,
+		Pager:       pager,
+		RootPageNum: 0,
 	}
 
-	if pager.numPages == 0 {
-		rootNode := getPage(pager, 0)
-		initializeLeafNode(rootNode)
+	if pager.NumPages == 0 {
+		root := pager.GetPage(0)
+		InitializeLeafNode(root)
 	}
 
 	return table, nil
 }
 
-func dbClose(table *Table) error {
-
-	pager := table.pager
-
-	for i := uint32(0); i < pager.numPages; i++ {
-
-		if pager.pages[i] == nil {
-			continue
-		}
-
-		if err := pagerFlush(pager, i); err != nil {
-			return err
-		}
-
-		pager.pages[i] = nil
-	}
-
-	return pager.file.Close()
+func (t *Table) Close() error {
+	return t.Pager.Close()
 }
 
-func printConstants() {
+func TableFind(
+	table *Table,
+	key uint32,
+) *Cursor {
 
-	fmt.Printf("ROW_SIZE: %d\n", ROW_SIZE)
-	fmt.Printf("COMMON_NODE_HEADER_SIZE: %d\n",
-		COMMON_NODE_HEADER_SIZE)
-	fmt.Printf("LEAF_NODE_HEADER_SIZE: %d\n",
-		LEAF_NODE_HEADER_SIZE)
-	fmt.Printf("LEAF_NODE_CELL_SIZE: %d\n",
-		LEAF_NODE_CELL_SIZE)
-	fmt.Printf("LEAF_NODE_SPACE_FOR_CELLS: %d\n",
-		LEAF_NODE_SPACE_FOR_CELLS)
-	fmt.Printf("LEAF_NODE_MAX_CELLS: %d\n",
-		LEAF_NODE_MAX_CELLS)
-}
+	rootPageNum := table.RootPageNum
 
-func printLeafNode(node []byte) {
+	rootNode := table.Pager.GetPage(rootPageNum)
 
-	numCells := leafNodeNumCells(node)
+	if GetNodeType(rootNode) == NodeLeaf {
 
-	fmt.Printf("leaf (size %d)\n", numCells)
-
-	for i := uint32(0); i < numCells; i++ {
-		fmt.Printf(
-			"  - %d : %d\n",
-			i,
-			leafNodeKey(node, i),
+		return LeafNodeFind(
+			table,
+			rootPageNum,
+			key,
 		)
 	}
+
+	panic("internal nodes not implemented")
+}
+
+func LeafNodeFind(
+	table *Table,
+	pageNum uint32,
+	key uint32,
+) *Cursor {
+
+	node := table.Pager.GetPage(pageNum)
+
+	numCells := LeafNodeNumCells(node)
+
+	cursor := &Cursor{
+		Table:   table,
+		PageNum: pageNum,
+	}
+
+	minIndex := uint32(0)
+	onePastMax := numCells
+
+	for minIndex != onePastMax {
+
+		index := (minIndex + onePastMax) / 2
+
+		keyAtIndex := LeafNodeKey(node, index)
+
+		if key == keyAtIndex {
+
+			cursor.CellNum = index
+			return cursor
+		}
+
+		if key < keyAtIndex {
+			onePastMax = index
+		} else {
+			minIndex = index + 1
+		}
+	}
+
+	cursor.CellNum = minIndex
+
+	return cursor
+}
+
+func LeafNodeInsert(
+	cursor *Cursor,
+	key uint32,
+	value *Row,
+) error {
+
+	node :=
+		cursor.Table.Pager.GetPage(
+			cursor.PageNum,
+		)
+
+	numCells :=
+		LeafNodeNumCells(node)
+
+	if numCells >= LeafNodeMaxCells {
+		return errors.New(
+			"Need to implement splitting a leaf node",
+		)
+	}
+
+	if cursor.CellNum < numCells {
+
+		for i := numCells; i > cursor.CellNum; i-- {
+
+			dst :=
+				LeafNodeCell(node, i)
+
+			src :=
+				LeafNodeCell(node, i-1)
+
+			copy(
+				dst[:LeafNodeCellSize],
+				src[:LeafNodeCellSize],
+			)
+		}
+	}
+
+	SetLeafNodeNumCells(
+		node,
+		numCells+1,
+	)
+
+	SetLeafNodeKey(
+		node,
+		cursor.CellNum,
+		key,
+	)
+
+	SerializeRow(
+		value,
+		LeafNodeValue(
+			node,
+			cursor.CellNum,
+		),
+	)
+
+	return nil
 }

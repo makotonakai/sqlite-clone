@@ -1,22 +1,24 @@
 package main
 
 import (
-	"fmt"
 	"os"
 )
 
 const (
-	TABLE_MAX_PAGES = 100
+	PageSize      = 4096
+	TableMaxPages = 100
 )
 
 type Pager struct {
-	file       *os.File
-	fileLength uint32
-	numPages   uint32
-	pages      [TABLE_MAX_PAGES][]byte
+	File     *os.File
+	FileSize int64
+
+	NumPages uint32
+
+	Pages [TableMaxPages][]byte
 }
 
-func pagerOpen(filename string) (*Pager, error) {
+func OpenPager(filename string) (*Pager, error) {
 
 	file, err := os.OpenFile(
 		filename,
@@ -29,96 +31,76 @@ func pagerOpen(filename string) (*Pager, error) {
 	}
 
 	info, err := file.Stat()
+
 	if err != nil {
-		file.Close()
 		return nil, err
 	}
 
-	fileLength := uint32(info.Size())
+	numPages := uint32(info.Size() / PageSize)
 
-	if fileLength%PAGE_SIZE != 0 {
-		return nil,
-			fmt.Errorf(
-				"db file is not a whole number of pages. corrupt file",
-			)
+	if info.Size()%PageSize != 0 {
+		numPages++
 	}
 
-	pager := &Pager{
-		file:       file,
-		fileLength: fileLength,
-		numPages:   fileLength / PAGE_SIZE,
-	}
-
-	return pager, nil
+	return &Pager{
+		File:     file,
+		FileSize: info.Size(),
+		NumPages: numPages,
+	}, nil
 }
 
-func getPage(
-	pager *Pager,
-	pageNum uint32,
-) []byte {
+func (p *Pager) GetPage(pageNum uint32) []byte {
 
-	if pageNum >= TABLE_MAX_PAGES {
-		panic(
-			fmt.Sprintf(
-				"Tried to fetch page number out of bounds. %d >= %d",
-				pageNum,
-				TABLE_MAX_PAGES,
-			),
-		)
-	}
+	if p.Pages[pageNum] == nil {
 
-	if pager.pages[pageNum] == nil {
+		page := make([]byte, PageSize)
 
-		page := make([]byte, PAGE_SIZE)
+		offset := int64(pageNum) * PageSize
 
-		numPages := pager.fileLength / PAGE_SIZE
-
-		if pager.fileLength%PAGE_SIZE != 0 {
-			numPages++
+		if offset < p.FileSize {
+			_, _ = p.File.ReadAt(page, offset)
 		}
 
-		if pageNum < numPages {
+		p.Pages[pageNum] = page
 
-			_, err :=
-				pager.file.ReadAt(
-					page,
-					int64(pageNum*PAGE_SIZE),
-				)
-
-			if err != nil &&
-				err.Error() != "EOF" {
-				panic(err)
-			}
-		}
-
-		pager.pages[pageNum] = page
-
-		if pageNum >= pager.numPages {
-			pager.numPages = pageNum + 1
+		if pageNum >= p.NumPages {
+			p.NumPages = pageNum + 1
 		}
 	}
 
-	return pager.pages[pageNum]
+	return p.Pages[pageNum]
 }
 
-func pagerFlush(
-	pager *Pager,
-	pageNum uint32,
-) error {
+func (p *Pager) Flush(pageNum uint32) error {
 
-	page := pager.pages[pageNum]
+	page := p.Pages[pageNum]
 
 	if page == nil {
-		return fmt.Errorf(
-			"tried to flush null page",
-		)
+		return nil
 	}
 
-	_, err :=
-		pager.file.WriteAt(
-			page,
-			int64(pageNum*PAGE_SIZE),
-		)
+	offset := int64(pageNum) * PageSize
+
+	_, err := p.File.WriteAt(
+		page,
+		offset,
+	)
 
 	return err
+}
+
+func (p *Pager) Close() error {
+
+	for i := uint32(0); i < p.NumPages; i++ {
+
+		if p.Pages[i] == nil {
+			continue
+		}
+
+		if err := p.Flush(i); err != nil {
+			return err
+		}
+	}
+
+	return p.File.Close()
 }
