@@ -42,11 +42,12 @@ func main() {
 				return
 
 		case ".btree":
-				root := table.Pager.GetPage(
+				fmt.Println("Tree:")
+				PrintTree(
+						table.Pager,
 						table.RootPageNum,
+						0,
 				)
-
-				PrintLeafNode(root)
 				continue
 
 		case ".constants":

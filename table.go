@@ -1,7 +1,5 @@
 package main
 
-import "errors"
-
 type Table struct {
 	Pager       *Pager
 	RootPageNum uint32
@@ -19,8 +17,9 @@ func OpenTable(filename string) (*Table, error) {
 	}
 
 	if pager.NumPages == 0 {
-		root := pager.GetPage(0)
-		InitializeLeafNode(root)
+    root := pager.GetPage(0)
+    InitializeLeafNode(root)
+    SetNodeRoot(root, true)
 	}
 
 	return table, nil
@@ -48,7 +47,11 @@ func TableFind(
 		)
 	}
 
-	panic("internal nodes not implemented")
+	return InternalNodeFind(
+    table,
+    rootPageNum,
+    key,
+	)
 }
 
 func LeafNodeFind(
@@ -108,9 +111,13 @@ func LeafNodeInsert(
 		LeafNodeNumCells(node)
 
 	if numCells >= LeafNodeMaxCells {
-		return errors.New(
-			"Need to implement splitting a leaf node",
+			LeafNodeSplitAndInsert(
+			cursor,
+			key,
+			value,
 		)
+
+		return nil
 	}
 
 	if cursor.CellNum < numCells {
@@ -150,4 +157,60 @@ func LeafNodeInsert(
 	)
 
 	return nil
+}
+
+func InternalNodeFind(
+    table *Table,
+    pageNum uint32,
+    key uint32,
+) *Cursor {
+
+    node := table.Pager.GetPage(pageNum)
+
+    numKeys := InternalNodeNumKeys(node)
+
+    minIndex := uint32(0)
+    maxIndex := numKeys
+
+    for minIndex != maxIndex {
+
+        index := (minIndex + maxIndex) / 2
+
+        keyToRight := InternalNodeKey(
+            node,
+            index,
+        )
+
+        if key < keyToRight {
+            maxIndex = index
+        } else {
+            minIndex = index + 1
+        }
+    }
+
+    childNum := InternalNodeChild(
+        node,
+        minIndex,
+    )
+
+    child := table.Pager.GetPage(childNum)
+
+    switch GetNodeType(child) {
+
+    case NodeLeaf:
+        return LeafNodeFind(
+            table,
+            childNum,
+            key,
+        )
+
+    case NodeInternal:
+        return InternalNodeFind(
+            table,
+            childNum,
+            key,
+        )
+    }
+
+    panic("unknown node type")
 }
