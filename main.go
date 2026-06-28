@@ -1,139 +1,32 @@
 package main
 
 import (
-	"bufio"
-	"fmt"
 	"os"
+	"fmt"
+	"bufio"
+	"strings"
 )
 
 func main() {
 
-	if len(os.Args) < 2 {
-		fmt.Println("Must supply database filename.")
-		os.Exit(1)
-	}
+    reader := bufio.NewReaderSize(os.Stdin, 1024*1024)
 
-	table, err := OpenTable(os.Args[1])
+    for {
 
-	if err != nil {
-		panic(err)
-	}
+        fmt.Print("db > ")
 
-	scanner := bufio.NewScanner(os.Stdin)
+        line, err := reader.ReadString('\n')
+        if err != nil {
+            return
+        }
 
-	for {
+        line = strings.TrimSpace(line)
 
-		fmt.Print("db > ")
-
-		if !scanner.Scan() {
-			break
-		}
-
-		input := scanner.Text()
-
-		if input == "" {
-			continue
-		}
-
-		switch input {
-
-		case ".exit":
-				_ = table.Close()
-				return
-
-		case ".btree":
-				fmt.Println("Tree:")
-				PrintTree(
-						table.Pager,
-						table.RootPageNum,
-						0,
-				)
-				continue
-
-		case ".constants":
-				PrintConstants()
-				continue
-		}
-
-		var stmt Statement
-
-		err := PrepareStatement(
-			input,
-			&stmt,
-		)
-
-		if err != nil {
-			fmt.Println(err)
-			continue
-		}
-
-		switch stmt.Type {
-
-		case StatementInsert:
-
-    row := stmt.RowToInsert
-
-    cursor := TableFind(
-      table,
-      row.ID,
-    )
-
-    root := table.Pager.GetPage(
-      table.RootPageNum,
-    )
-
-    numCells := LeafNodeNumCells(root)
-
-    if cursor.CellNum < numCells {
-
-        keyAtIndex := LeafNodeKey(
-          root,
-          cursor.CellNum,
-        )
-
-        if keyAtIndex == row.ID {
-          fmt.Println(
-            "Error: Duplicate key.",
-          )
-          continue
+        if line == "exit" {
+            os.Exit(0)
+        } else {
+            fmt.Printf("Unrecognized command: %s\n", line)
         }
     }
-
-    err := LeafNodeInsert(
-      cursor,
-      row.ID,
-      &row,
-    )
-
-    if err != nil {
-        fmt.Println(err)
-        continue
-    }
-
-    fmt.Println("Executed.")
-
-		case StatementSelect:
-
-			cursor := TableStart(table)
-
-			for !cursor.EndOfTable {
-
-				row :=
-					DeserializeRow(
-						cursor.Value(),
-					)
-
-				fmt.Printf(
-					"(%d, %s, %s)\n",
-					row.ID,
-					row.Username,
-					row.Email,
-				)
-
-				cursor.Advance()
-			}
-
-			fmt.Println("Executed.")
-		}
-	}
+		
 }
