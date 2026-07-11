@@ -7,6 +7,8 @@ import (
 	"strings"
 )
 
+const TABLE_MAX_ROWS=100
+
 func PrintPrompt() {
     fmt.Print("db > ")
 }
@@ -14,6 +16,7 @@ func PrintPrompt() {
 func main() {
 
     reader := bufio.NewReaderSize(os.Stdin, 1024*1024)
+    table := NewTable()
 
     for {
 
@@ -37,7 +40,7 @@ func main() {
         }
 
         var statement Statement
-        switch PrepareStatement(line, statement) {
+        switch PrepareStatement(line, &statement) {
         case PREPARE_SUCCESS:
             break
         case PREPARE_UNRECOGNIZED_COMMAND:
@@ -45,7 +48,7 @@ func main() {
             continue
         }
 
-        ExecuteStatement(statement)
+        ExecuteStatement(&statement, table)
         fmt.Printf("Executed.\n")
         
     }
