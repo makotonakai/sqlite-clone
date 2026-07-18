@@ -1,10 +1,13 @@
 package main
 
 import (
+    "io"
 	"os"
 	"fmt"
 	"strings"
     "strconv"
+    "syscall"
+    "encoding/binary"
 )
 
 type MetaCommandResult int
@@ -23,9 +26,10 @@ const (
 )
 
 
-func DoMetaCommand(line string) MetaCommandResult {
+func DoMetaCommand(line string, table *Table) MetaCommandResult {
 
     if line == ".exit" {
+        DBClose(table)
         os.Exit(0)
     } else {
         return META_COMMAND_UNRECOGNIZED_COMMAND
@@ -93,19 +97,29 @@ func PrepareStatement(line string, statement *Statement) PrepareResult {
 
 func ExecuteInsert(statement *Statement, table *Table) ExecuteResult {
 
-    if len(table.Rows) >= TABLE_MAX_ROWS {
+    if table.NumRows >= TABLE_MAX_ROWS {
         return EXECUTE_TABLE_FULL
     }
 
-    table.Rows = append(table.Rows, statement.RowToInsert)
+    destination := RowSlot(table, table.NumRows)
+
+    SerializeRow(&statement.RowToInsert, destination)
+
+    table.NumRows++
 
     return EXECUTE_SUCCESS
-
 }
 
 func ExecuteSelect(table *Table) ExecuteResult {
 
-    for _, row := range table.Rows {
+    var row Row
+
+    for i := uint32(0); i < table.NumRows; i++ {
+
+        source := RowSlot(table, i)
+
+        DeserializeRow(source, &row)
+
         fmt.Printf("(%d, %s, %s)\n",
             row.ID,
             row.UserName,
@@ -139,11 +153,200 @@ const (
 )
 
 type Table struct {
-    Rows []Row
+    Pager *Pager
+    NumRows uint32
 }
 
-func NewTable() *Table {
-    return &Table{
-        Rows: make([]Row, 0),
+// func NewTable() *Table {
+//     return &Table{
+//         P
+//     }
+// }
+
+func DBOpen(fileName string) *Table {
+
+    p := PagerOpen(fileName)
+
+    return &Table {
+        Pager: p,
+        NumRows: uint32(p.FileLength / ROW_SIZE),
     }
+
+}
+
+func DBClose(table *Table) {
+
+    pager := table.Pager
+
+    numFullPages := table.NumRows / ROWS_PER_PAGE
+
+    for i := uint32(0); i < numFullPages; i++ {
+
+        if pager.Pages[i] == nil {
+            continue
+        }
+
+        PagerFlush(pager, i, PAGE_SIZE)
+
+        pager.Pages[i] = nil
+    }
+
+    numAdditionalRows := table.NumRows % ROWS_PER_PAGE
+
+    if numAdditionalRows > 0 {
+
+        pageNum := numFullPages
+
+        if pager.Pages[pageNum] != nil {
+
+            PagerFlush(
+                pager,
+                pageNum,
+                numAdditionalRows*ROW_SIZE,
+            )
+
+            pager.Pages[pageNum] = nil
+        }
+    }
+
+    pager.File.Close()
+}
+
+func PagerOpen(fileName string) *Pager {
+    
+    file, err := os.OpenFile(
+        fileName, 
+        os.O_RDWR|os.O_CREATE|syscall.S_IWUSR|syscall.S_IRUSR, 
+        0644,
+    )
+
+    if err != nil {
+        fmt.Println(err)
+    }
+
+    stat, err := file.Stat()
+    if err != nil {
+        fmt.Println(err)
+    }
+
+    p := Pager{
+        File: file,
+        FileLength: stat.Size(),
+    }
+
+    return &p
+}
+
+func PagerFlush(pager *Pager, pageNum uint32, size uint32) {
+
+    if pager.Pages[pageNum] == nil {
+        fmt.Printf("tried to flush nil page\n")
+    }
+
+    _, err := pager.File.Seek(
+        int64(pageNum)*PAGE_SIZE,
+        0,
+    )
+
+    if err != nil {
+        fmt.Println(err)
+    }
+
+    _, err = pager.File.Write(
+        pager.Pages[pageNum][:size],
+    )
+
+    if err != nil {
+        fmt.Println(err)
+    }
+}
+
+func GetPage(pager *Pager, pageNum uint32) []byte {
+
+    if pageNum >= TABLE_MAX_PAGES {
+        fmt.Printf("Tried to fetch page number out of bounds. %d > %d\n", 
+            pageNum,
+            TABLE_MAX_PAGES,
+        );
+        os.Exit(1)
+    }
+
+    if pager.Pages[pageNum] == nil {
+        page := make([]byte, PAGE_SIZE)
+        numPages := pager.FileLength / PAGE_SIZE
+
+        if pager.FileLength % PAGE_SIZE != 0 {
+            numPages++
+        }
+
+        if int64(pageNum) < numPages {
+            pager.File.Seek(int64(pageNum)*PAGE_SIZE, 0)
+
+            _, err := io.ReadFull(pager.File, page)
+            if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+                fmt.Println(err)
+                os.Exit(1)
+            }
+        }
+
+        pager.Pages[pageNum] = page
+    }
+
+    return pager.Pages[pageNum]
+}
+
+func RowSlot(table *Table, rowNum uint32) []byte {
+
+    pageNum := rowNum / ROWS_PER_PAGE
+
+    p := GetPage(table.Pager, pageNum)
+
+    rowOffset := rowNum % ROWS_PER_PAGE
+    byteOffset := rowOffset * ROW_SIZE
+
+    return p[byteOffset: byteOffset+ROW_SIZE]
+}
+
+type Pager struct {
+    File *os.File
+    FileLength int64
+    Pages [TABLE_MAX_PAGES][]byte
+}
+
+func SerializeRow(row *Row, destination []byte) {
+
+    // id
+    binary.LittleEndian.PutUint32(
+        destination[ID_OFFSET:ID_OFFSET+ID_SIZE],
+        row.ID,
+    )
+
+    // username
+    copy(
+        destination[USERNAME_OFFSET:USERNAME_OFFSET+USERNAME_SIZE],
+        []byte(row.UserName),
+    )
+
+    // email
+    copy(
+        destination[EMAIL_OFFSET:EMAIL_OFFSET+EMAIL_SIZE],
+        []byte(row.Email),
+    )
+}
+
+func DeserializeRow(source []byte, row *Row) {
+
+    row.ID = binary.LittleEndian.Uint32(
+        source[ID_OFFSET:ID_OFFSET+ID_SIZE],
+    )
+
+    username := source[USERNAME_OFFSET : USERNAME_OFFSET+USERNAME_SIZE]
+    email := source[EMAIL_OFFSET : EMAIL_OFFSET+EMAIL_SIZE]
+
+    row.UserName = string(username)
+    row.Email = string(email)
+
+    // Remove trailing '\0'
+    row.UserName = strings.TrimRight(row.UserName, "\x00")
+    row.Email = strings.TrimRight(row.Email, "\x00")
 }
