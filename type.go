@@ -101,9 +101,8 @@ func ExecuteInsert(statement *Statement, table *Table) ExecuteResult {
         return EXECUTE_TABLE_FULL
     }
 
-    destination := RowSlot(table, table.NumRows)
-
-    SerializeRow(&statement.RowToInsert, destination)
+    cursor := EndTable(table)
+    SerializeRow(&statement.RowToInsert, CursorValue(cursor))
 
     table.NumRows++
 
@@ -112,19 +111,21 @@ func ExecuteInsert(statement *Statement, table *Table) ExecuteResult {
 
 func ExecuteSelect(table *Table) ExecuteResult {
 
+    cursor := StartTable(table)
+
     var row Row
 
-    for i := uint32(0); i < table.NumRows; i++ {
+    for !cursor.EndOfTable {
 
-        source := RowSlot(table, i)
-
-        DeserializeRow(source, &row)
+        DeserializeRow(CursorValue(cursor), &row)
 
         fmt.Printf("(%d, %s, %s)\n",
             row.ID,
             row.UserName,
             row.Email,
         )
+
+        CursorAdvance(cursor)
     }
 
     return EXECUTE_SUCCESS
@@ -295,16 +296,27 @@ func GetPage(pager *Pager, pageNum uint32) []byte {
     return pager.Pages[pageNum]
 }
 
-func RowSlot(table *Table, rowNum uint32) []byte {
+func CursorValue(cursor *Cursor) []byte {
 
-    pageNum := rowNum / ROWS_PER_PAGE
+    numRows := cursor.NumRows
+    pageNum := numRows / ROWS_PER_PAGE
 
-    p := GetPage(table.Pager, pageNum)
+    p := GetPage(cursor.Table.Pager, pageNum)
 
-    rowOffset := rowNum % ROWS_PER_PAGE
+    rowOffset := numRows % ROWS_PER_PAGE
     byteOffset := rowOffset * ROW_SIZE
 
     return p[byteOffset: byteOffset+ROW_SIZE]
+}
+
+func CursorAdvance(cursor *Cursor) {
+
+    cursor.NumRows = cursor.NumRows + 1
+
+    if cursor.NumRows >= cursor.Table.NumRows {
+        cursor.EndOfTable = true
+    }
+
 }
 
 type Pager struct {
@@ -350,3 +362,39 @@ func DeserializeRow(source []byte, row *Row) {
     row.UserName = strings.TrimRight(row.UserName, "\x00")
     row.Email = strings.TrimRight(row.Email, "\x00")
 }
+
+type Cursor struct {
+    Table *Table
+    NumRows uint32
+    EndOfTable bool
+}
+
+func StartTable(table *Table) *Cursor {
+
+    var hasZeroRows bool
+    if table.NumRows == 0 {
+        hasZeroRows = true
+    } else {
+        hasZeroRows = false
+    }
+
+    return &Cursor{
+        Table: table,
+        NumRows: 0,
+        EndOfTable: hasZeroRows,
+    }
+
+}
+
+func EndTable(table *Table) *Cursor {
+
+    return &Cursor{
+        Table: table,
+        NumRows: 0,
+        EndOfTable: true,
+    }
+
+}
+
+
+

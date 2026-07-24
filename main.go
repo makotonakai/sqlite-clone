@@ -22,9 +22,11 @@ const (
     ROW_SIZE = ID_SIZE + USERNAME_SIZE + EMAIL_SIZE
 )
 
+// TODO: Estimate the cache (memory) size / Why does the file take 4k?
+// Data that are not on the cache will be written to the disk, which will take 1 million times.
+
 const TABLE_MAX_PAGES=100
 const PAGE_SIZE=4096
-// const ROW_SIZE=4096
 const ROWS_PER_PAGE=PAGE_SIZE/ROW_SIZE
 const TABLE_MAX_ROWS=ROWS_PER_PAGE * TABLE_MAX_PAGES
 
