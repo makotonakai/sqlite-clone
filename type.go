@@ -390,7 +390,7 @@ func EndTable(table *Table) *Cursor {
 
     return &Cursor{
         Table: table,
-        NumRows: 0,
+        NumRows: table.NumRows,
         EndOfTable: true,
     }
 
