@@ -1,23 +1,32 @@
 package main
 
 import (
-	"strings"
-  "encoding/binary"
+    "strings"
+    "encoding/binary"
 )
 
 type Table struct {
     Pager *Pager
     NumRows uint32
+    RootPageNum uint32
 }
 
 func DBOpen(fileName string) *Table {
 
     p := PagerOpen(fileName)
 
-    return &Table {
+    t := &Table {
         Pager: p,
-        NumRows: uint32(p.FileLength / ROW_SIZE),
+        RootPageNum: 0,
     }
+
+    if p.NumPages == 0 {
+        // Root node
+        rn := GetPage(p, 0)
+        initializeLeafNode(rn)
+    }
+
+    return t
 
 }
 
@@ -25,35 +34,17 @@ func DBClose(table *Table) {
 
     pager := table.Pager
 
-    numFullPages := table.NumRows / ROWS_PER_PAGE
+    // numFullPages := table.NumRows / ROWS_PER_PAGE
 
-    for i := uint32(0); i < numFullPages; i++ {
+    for i := 0; i < int(pager.NumPages); i++ {
 
         if pager.Pages[i] == nil {
             continue
         }
 
-        PagerFlush(pager, i, PAGE_SIZE)
+        PagerFlush(pager, uint32(i))
 
         pager.Pages[i] = nil
-    }
-
-    numAdditionalRows := table.NumRows % ROWS_PER_PAGE
-
-    if numAdditionalRows > 0 {
-
-        pageNum := numFullPages
-
-        if pager.Pages[pageNum] != nil {
-
-            PagerFlush(
-                pager,
-                pageNum,
-                numAdditionalRows*ROW_SIZE,
-            )
-
-            pager.Pages[pageNum] = nil
-        }
     }
 
     pager.File.Close()
@@ -63,22 +54,21 @@ func DBClose(table *Table) {
 
 func CursorValue(cursor *Cursor) []byte {
 
-    numRows := cursor.NumRows
-    pageNum := numRows / ROWS_PER_PAGE
+    pageNum := cursor.PageNum
 
     p := GetPage(cursor.Table.Pager, pageNum)
 
-    rowOffset := numRows % ROWS_PER_PAGE
-    byteOffset := rowOffset * ROW_SIZE
-
-    return p[byteOffset: byteOffset+ROW_SIZE]
+    return leafNodeValue(p, cursor.CellNum)
 }
 
 func CursorAdvance(cursor *Cursor) {
 
-    cursor.NumRows = cursor.NumRows + 1
+    // Page number
+    pn := cursor.PageNum
+    node := GetPage(cursor.Table.Pager, pn)
 
-    if cursor.NumRows >= cursor.Table.NumRows {
+    cursor.CellNum = cursor.CellNum + 1
+    if cursor.CellNum >= leafNodeNumCells(node) {
         cursor.EndOfTable = true
     }
 
@@ -124,34 +114,52 @@ func DeserializeRow(source []byte, row *Row) {
 
 type Cursor struct {
     Table *Table
-    NumRows uint32
+    PageNum uint32
+    CellNum uint32
     EndOfTable bool
 }
 
 func StartTable(table *Table) *Cursor {
 
-    var hasZeroRows bool
-    if table.NumRows == 0 {
-        hasZeroRows = true
-    } else {
-        hasZeroRows = false
+    c := &Cursor{
+        Table: table,
+        PageNum: table.RootPageNum,
+        CellNum: 0,
     }
 
-    return &Cursor{
-        Table: table,
-        NumRows: 0,
-        EndOfTable: hasZeroRows,
+    // Root node
+    rn := GetPage(table.Pager, table.RootPageNum)
+
+    // # of cells
+    nc := leafNodeNumCells(rn)
+
+    if nc == 0 {
+        c.EndOfTable = true
+    } else {
+        c.EndOfTable = false
     }
+
+    return c
 
 }
 
 func EndTable(table *Table) *Cursor {
 
-    return &Cursor{
+    c :=  &Cursor{
         Table: table,
-        NumRows: table.NumRows,
-        EndOfTable: true,
+        PageNum: table.RootPageNum,
     }
+
+    // Root node
+    rn := GetPage(table.Pager, table.RootPageNum)
+
+    // # of cells
+    nc := leafNodeNumCells(rn)
+
+    c.CellNum = nc
+    c.EndOfTable = true
+
+    return c
 
 }
 

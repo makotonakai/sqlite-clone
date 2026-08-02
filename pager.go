@@ -10,6 +10,7 @@ import (
 type Pager struct {
     File *os.File
     FileLength int64
+	NumPages uint32
     Pages [TABLE_MAX_PAGES][]byte
 }
 
@@ -33,12 +34,18 @@ func PagerOpen(fileName string) *Pager {
     p := Pager{
         File: file,
         FileLength: stat.Size(),
+        NumPages: uint32(stat.Size() / PAGE_SIZE),
+    }
+
+    if stat.Size() % PAGE_SIZE != 0 {
+        fmt.Printf("Db file is not a whole number of pages. Corrupt file.\n");
+        os.Exit(1);
     }
 
     return &p
 }
 
-func PagerFlush(pager *Pager, pageNum uint32, size uint32) {
+func PagerFlush(pager *Pager, pageNum uint32) {
 
     if pager.Pages[pageNum] == nil {
         fmt.Printf("tried to flush nil page\n")
@@ -54,7 +61,7 @@ func PagerFlush(pager *Pager, pageNum uint32, size uint32) {
     }
 
     _, err = pager.File.Write(
-        pager.Pages[pageNum][:size],
+        pager.Pages[pageNum][:PAGE_SIZE],
     )
 
     if err != nil {
@@ -91,6 +98,10 @@ func GetPage(pager *Pager, pageNum uint32) []byte {
         }
 
         pager.Pages[pageNum] = page
+
+        if pageNum >= pager.NumPages {
+            pager.NumPages = pageNum + 1
+        }
     }
 
     return pager.Pages[pageNum]

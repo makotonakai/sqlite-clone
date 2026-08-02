@@ -22,12 +22,19 @@ const (
     PREPARE_SYNTAX_ERROR
 )
 
-
 func DoMetaCommand(line string, table *Table) MetaCommandResult {
 
     if line == ".exit" {
         DBClose(table)
         os.Exit(0)
+    } else if line == ".constants" {
+        fmt.Printf("Constants:\n");
+        PrintConstants();
+        return META_COMMAND_SUCCESS;
+    } else if line == ".btree" {
+        fmt.Printf("Tree:\n");
+        PrintLeafNode(GetPage(table.Pager, 0))
+        return META_COMMAND_SUCCESS;
     } else {
         return META_COMMAND_UNRECOGNIZED_COMMAND
     }
@@ -94,14 +101,16 @@ func PrepareStatement(line string, statement *Statement) PrepareResult {
 
 func ExecuteInsert(statement *Statement, table *Table) ExecuteResult {
 
-    if table.NumRows >= TABLE_MAX_ROWS {
+    node := GetPage(table.Pager, table.RootPageNum)
+
+    if leafNodeNumCells(node) >= LEAF_NODE_MAX_CELLS {
         return EXECUTE_TABLE_FULL
     }
 
     cursor := EndTable(table)
-    SerializeRow(&statement.RowToInsert, CursorValue(cursor))
 
-    table.NumRows++
+    rti := &statement.RowToInsert
+    leafNodeInsert(cursor, rti.ID, rti)
 
     return EXECUTE_SUCCESS
 }

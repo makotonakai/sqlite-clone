@@ -27,8 +27,6 @@ const (
 
 const TABLE_MAX_PAGES=100
 const PAGE_SIZE=4096
-const ROWS_PER_PAGE=PAGE_SIZE/ROW_SIZE
-const TABLE_MAX_ROWS=ROWS_PER_PAGE * TABLE_MAX_PAGES
 
 
 func PrintPrompt() {
