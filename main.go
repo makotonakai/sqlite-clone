@@ -76,8 +76,21 @@ func main() {
             continue
         }
 
-        ExecuteStatement(&s, t)
-        fmt.Printf("Executed.\n")
+        // ExecuteStatement(&s, t)
+        // fmt.Printf("Executed.\n")
+
+        result := ExecuteStatement(&s, t)
+
+        switch result {
+        case EXECUTE_SUCCESS:
+            fmt.Printf("Executed.\n")
+
+        case EXECUTE_DUPLICATE_KEY:
+            fmt.Printf("Error: Duplicate key.\n")
+
+        case EXECUTE_TABLE_FULL:
+            fmt.Printf("Error: Table full.\n")
+        }
         
     }
 		

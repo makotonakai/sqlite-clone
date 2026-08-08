@@ -102,15 +102,34 @@ func PrepareStatement(line string, statement *Statement) PrepareResult {
 func ExecuteInsert(statement *Statement, table *Table) ExecuteResult {
 
     node := GetPage(table.Pager, table.RootPageNum)
+    
+    // # of cells
+    nc := leafNodeNumCells(node)
 
-    if leafNodeNumCells(node) >= LEAF_NODE_MAX_CELLS {
+    if nc >= LEAF_NODE_MAX_CELLS {
         return EXECUTE_TABLE_FULL
     }
 
-    cursor := EndTable(table)
+    // Row to insert
+    rti := statement.RowToInsert
 
-    rti := &statement.RowToInsert
-    leafNodeInsert(cursor, rti.ID, rti)
+    // Key to insert
+    kti := rti.ID
+    
+    // Cursor
+    c := FindTable(table, kti)
+
+    if c.CellNum < nc {
+
+        // Key at index
+        kai := leafNodeKey(node, c.CellNum)
+
+        if kai == kti {
+            return EXECUTE_DUPLICATE_KEY
+        }
+    }
+
+    leafNodeInsert(c, rti.ID, &rti)
 
     return EXECUTE_SUCCESS
 }
@@ -156,5 +175,6 @@ type ExecuteResult int
 
 const (
     EXECUTE_SUCCESS = iota
+    EXECUTE_DUPLICATE_KEY
     EXECUTE_TABLE_FULL
 )

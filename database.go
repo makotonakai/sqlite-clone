@@ -1,6 +1,8 @@
 package main
 
 import (
+    "os"
+    "fmt"
     "strings"
     "encoding/binary"
 )
@@ -143,23 +145,44 @@ func StartTable(table *Table) *Cursor {
 
 }
 
-func EndTable(table *Table) *Cursor {
+// func EndTable(table *Table) *Cursor {
 
-    c :=  &Cursor{
-        Table: table,
-        PageNum: table.RootPageNum,
-    }
+//     c :=  &Cursor{
+//         Table: table,
+//         PageNum: table.RootPageNum,
+//     }
+
+//     // Root node
+//     rn := GetPage(table.Pager, table.RootPageNum)
+
+//     // # of cells
+//     nc := leafNodeNumCells(rn)
+
+//     c.CellNum = nc
+//     c.EndOfTable = true
+
+//     return c
+
+// }
+
+func FindTable(table *Table, key uint32) *Cursor {
+
+    // # of the root page
+    rpm := table.RootPageNum
 
     // Root node
-    rn := GetPage(table.Pager, table.RootPageNum)
+    rn := GetPage(table.Pager, rpm)
 
-    // # of cells
-    nc := leafNodeNumCells(rn)
+    nt := nodeType(rn)
+    
+    if nt == NODE_LEAF {
+        return FindLeafNode(table, rpm, key)
+    } else {
+        fmt.Printf("Need to implement searching an internal node\n")
+        os.Exit(1)
+    }
 
-    c.CellNum = nc
-    c.EndOfTable = true
-
-    return c
+    return nil
 
 }
 

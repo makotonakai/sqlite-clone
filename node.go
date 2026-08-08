@@ -104,6 +104,7 @@ func leafNodeValue(node []byte, cellNum uint32) []byte {
 }
 
 func initializeLeafNode(node []byte) {
+    setNodeType(node, NODE_LEAF);
     setLeafNodeNumCells(node, 0)
 }
 
@@ -131,6 +132,55 @@ func leafNodeInsert(cursor *Cursor, key uint32, value *Row) {
 
 }
 
+func FindLeafNode(table *Table, pageNum uint32, key uint32) *Cursor {
+
+    node := GetPage(table.Pager, pageNum)
+
+    // # of cells
+    nc := leafNodeNumCells(node)
+
+    c := &Cursor{
+        Table: table,
+        PageNum: pageNum,
+    }
+
+    // Min index
+    mi := uint32(0)
+
+    // One past max index
+    opmi := nc
+
+    for opmi != mi {
+
+        idx := (mi + opmi) / 2
+
+        // Key at index
+        kai := leafNodeKey(node, idx)
+
+        if key == kai {
+            c.CellNum = idx
+            return c
+        }
+
+        if key < kai {
+            opmi = idx
+        } else {
+            mi = idx + 1
+        }
+    }
+
+    c.CellNum = mi
+    return c
+}
+
+
+func nodeType(node []byte) NodeType {
+    return NodeType(node[NODE_TYPE_OFFSET])
+}
+
+func setNodeType(node []byte, nt NodeType) {
+    node[NODE_TYPE_OFFSET] = byte(nt)
+}
 
 
 
