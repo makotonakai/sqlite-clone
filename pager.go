@@ -106,3 +106,7 @@ func GetPage(pager *Pager, pageNum uint32) []byte {
 
     return pager.Pages[pageNum]
 }
+
+func GetUnusedPageNum(pager *Pager) uint32 {
+    return pager.NumPages
+}

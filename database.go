@@ -25,7 +25,8 @@ func DBOpen(fileName string) *Table {
     if p.NumPages == 0 {
         // Root node
         rn := GetPage(p, 0)
-        initializeLeafNode(rn)
+        InitializeLeafNode(rn)
+        SetNodeRoot(rn, true)
     }
 
     return t
@@ -60,7 +61,7 @@ func CursorValue(cursor *Cursor) []byte {
 
     p := GetPage(cursor.Table.Pager, pageNum)
 
-    return leafNodeValue(p, cursor.CellNum)
+    return GetLeafNodeValue(p, cursor.CellNum)
 }
 
 func CursorAdvance(cursor *Cursor) {
@@ -70,7 +71,7 @@ func CursorAdvance(cursor *Cursor) {
     node := GetPage(cursor.Table.Pager, pn)
 
     cursor.CellNum = cursor.CellNum + 1
-    if cursor.CellNum >= leafNodeNumCells(node) {
+    if cursor.CellNum >= GetLeafNodeNumCells(node) {
         cursor.EndOfTable = true
     }
 
@@ -133,7 +134,7 @@ func StartTable(table *Table) *Cursor {
     rn := GetPage(table.Pager, table.RootPageNum)
 
     // # of cells
-    nc := leafNodeNumCells(rn)
+    nc := GetLeafNodeNumCells(rn)
 
     if nc == 0 {
         c.EndOfTable = true
@@ -156,7 +157,7 @@ func StartTable(table *Table) *Cursor {
 //     rn := GetPage(table.Pager, table.RootPageNum)
 
 //     // # of cells
-//     nc := leafNodeNumCells(rn)
+//     nc := GetLeafNodeNumCells(rn)
 
 //     c.CellNum = nc
 //     c.EndOfTable = true
@@ -173,7 +174,7 @@ func FindTable(table *Table, key uint32) *Cursor {
     // Root node
     rn := GetPage(table.Pager, rpm)
 
-    nt := nodeType(rn)
+    nt := GetNodeType(rn)
     
     if nt == NODE_LEAF {
         return FindLeafNode(table, rpm, key)

@@ -33,7 +33,7 @@ func DoMetaCommand(line string, table *Table) MetaCommandResult {
         return META_COMMAND_SUCCESS;
     } else if line == ".btree" {
         fmt.Printf("Tree:\n");
-        PrintLeafNode(GetPage(table.Pager, 0))
+        PrintTree(table.Pager, table.RootPageNum, 0)
         return META_COMMAND_SUCCESS;
     } else {
         return META_COMMAND_UNRECOGNIZED_COMMAND
@@ -104,11 +104,7 @@ func ExecuteInsert(statement *Statement, table *Table) ExecuteResult {
     node := GetPage(table.Pager, table.RootPageNum)
     
     // # of cells
-    nc := leafNodeNumCells(node)
-
-    if nc >= LEAF_NODE_MAX_CELLS {
-        return EXECUTE_TABLE_FULL
-    }
+    nc := GetLeafNodeNumCells(node)
 
     // Row to insert
     rti := statement.RowToInsert
@@ -122,14 +118,14 @@ func ExecuteInsert(statement *Statement, table *Table) ExecuteResult {
     if c.CellNum < nc {
 
         // Key at index
-        kai := leafNodeKey(node, c.CellNum)
+        kai := GetLeafNodeKey(node, c.CellNum)
 
         if kai == kti {
             return EXECUTE_DUPLICATE_KEY
         }
     }
 
-    leafNodeInsert(c, rti.ID, &rti)
+    InsertLeafNode(c, rti.ID, &rti)
 
     return EXECUTE_SUCCESS
 }

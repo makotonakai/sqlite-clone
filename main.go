@@ -33,6 +33,44 @@ func PrintPrompt() {
     fmt.Print("db > ")
 }
 
+func Indent(level uint32) {
+    for i := 0; uint32(i) < level; i++ {
+        fmt.Printf(" ")
+    }
+}
+
+func PrintTree(pager *Pager, page_num uint32, indentation_level uint32) {
+
+    node := GetPage(pager, page_num)
+
+    switch (GetNodeType(node)) {
+        case (NODE_LEAF):
+            numKeys := GetLeafNodeNumCells(node)
+            Indent(indentation_level);
+            fmt.Printf("- leaf (size %d)\n", numKeys)
+            for i := 0; uint32(i) < numKeys; i++ {
+                Indent(indentation_level + 1)
+                fmt.Printf("- %d\n", GetLeafNodeKey(node, uint32(i)))
+            }
+            break;
+        case (NODE_INTERNAL):
+            numKeys := GetInternalNodeNumKeys(node)
+            Indent(indentation_level);
+            fmt.Printf("- internal (size %d)\n", numKeys)
+            for i := 0; uint32(i) < numKeys; i++ {
+                child := GetInternalNodeChild(node, uint32(i))
+                PrintTree(pager, child, indentation_level + 1)
+                Indent(indentation_level + 1);
+                fmt.Printf("- key %d\n", GetInternalNodeKey(node, uint32(i)))
+            }
+            child := GetInternalNodeRightChild(node)
+            PrintTree(pager, child, indentation_level + 1)
+            break
+    }
+}
+
+
+
 func main() {
 
     r := bufio.NewReaderSize(os.Stdin, 1024*1024)
