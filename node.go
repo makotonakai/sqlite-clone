@@ -1,3 +1,5 @@
+// node.go
+
 package main
 
 import (
@@ -231,6 +233,40 @@ func SetInternalNodeKey(node []byte, keyNum uint32, key uint32) {
     )
 }
 
+func FindInternalNode(table *Table, pn uint32, key uint32) *Cursor {
+    node := GetPage(table.Pager, pn)
+    numKeys := GetInternalNodeNumKeys(node)
+
+    minIndex := uint32(0)
+    maxIndex := numKeys
+
+    for minIndex != maxIndex {
+        index := (minIndex + maxIndex) / 2
+
+        keyToRight := GetInternalNodeKey(node, index)
+
+        if keyToRight >= key {
+            maxIndex = index
+        } else {
+            minIndex = index + 1
+        }
+    }
+
+    childNum := minIndex
+    childPageNum := GetInternalNodeChild(node, childNum)
+    child := GetPage(table.Pager, childPageNum)
+
+    switch GetNodeType(child) {
+    case NODE_LEAF:
+        return FindLeafNode(table, childPageNum, key)
+
+    case NODE_INTERNAL:
+        return FindInternalNode(table, childPageNum, key)
+    }
+
+    return nil
+}
+
 func GetNodeMaxKey(node []byte) uint32 {
     switch GetNodeType(node) {
     case NODE_INTERNAL:
@@ -348,7 +384,7 @@ func SplitAndInsertLeafNode(cursor *Cursor, key uint32, value *Row) {
 
     InitializeLeafNode(nn)
 
-    for i := LEAF_NODE_MAX_CELLS; i >= 0; i-- {
+    for i := int(LEAF_NODE_MAX_CELLS); i >= 0; i-- {
 
         var dn []byte
 
@@ -364,7 +400,11 @@ func SplitAndInsertLeafNode(cursor *Cursor, key uint32, value *Row) {
         dst := GetLeafNodeCell(dn, uint32(iwn))
 
         if i == int(cursor.CellNum) {
-            SerializeRow(value, dst)
+            SetLeafNodeKey(dn, uint32(iwn), key)
+            SerializeRow(
+                value,
+                GetLeafNodeValue(dn, uint32(iwn)),
+            )
         } else if i > int(cursor.CellNum) {
             copy(dst, GetLeafNodeCell(on, uint32(i - 1)))
         } else {

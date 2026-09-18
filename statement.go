@@ -1,3 +1,5 @@
+// statement.go
+
 package main
 
 import (
@@ -101,23 +103,15 @@ func PrepareStatement(line string, statement *Statement) PrepareResult {
 
 func ExecuteInsert(statement *Statement, table *Table) ExecuteResult {
 
-    node := GetPage(table.Pager, table.RootPageNum)
-    
-    // # of cells
-    nc := GetLeafNodeNumCells(node)
-
-    // Row to insert
     rti := statement.RowToInsert
-
-    // Key to insert
     kti := rti.ID
-    
-    // Cursor
+
     c := FindTable(table, kti)
 
-    if c.CellNum < nc {
+    node := GetPage(table.Pager, c.PageNum)
+    nc := GetLeafNodeNumCells(node)
 
-        // Key at index
+    if c.CellNum < nc {
         kai := GetLeafNodeKey(node, c.CellNum)
 
         if kai == kti {
@@ -125,7 +119,7 @@ func ExecuteInsert(statement *Statement, table *Table) ExecuteResult {
         }
     }
 
-    InsertLeafNode(c, rti.ID, &rti)
+    InsertLeafNode(c, kti, &rti)
 
     return EXECUTE_SUCCESS
 }

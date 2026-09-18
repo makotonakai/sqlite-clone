@@ -1,8 +1,8 @@
+// database.go
+
 package main
 
 import (
-    "os"
-    "fmt"
     "strings"
     "encoding/binary"
 )
@@ -179,8 +179,9 @@ func FindTable(table *Table, key uint32) *Cursor {
     if nt == NODE_LEAF {
         return FindLeafNode(table, rpm, key)
     } else {
-        fmt.Printf("Need to implement searching an internal node\n")
-        os.Exit(1)
+        // fmt.Printf("Need to implement searching an internal node\n")
+        // os.Exit(1)
+        return FindInternalNode(table, rpm, key)
     }
 
     return nil
