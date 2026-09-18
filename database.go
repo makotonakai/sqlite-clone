@@ -72,7 +72,13 @@ func CursorAdvance(cursor *Cursor) {
 
     cursor.CellNum = cursor.CellNum + 1
     if cursor.CellNum >= GetLeafNodeNumCells(node) {
-        cursor.EndOfTable = true
+        npn := GetLeafNodeNextLeaf(node)
+        if npn == 0 {
+            cursor.EndOfTable = true
+        } else {
+            cursor.PageNum = npn
+            cursor.CellNum = 0
+        }
     }
 
 }

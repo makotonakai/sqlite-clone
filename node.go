@@ -30,7 +30,6 @@ const (
 
 	LEAF_NODE_NUM_CELLS_SIZE = 4
 	LEAF_NODE_NUM_CELLS_OFFSET = COMMON_NODE_HEADER_SIZE
-	LEAF_NODE_HEADER_SIZE = COMMON_NODE_HEADER_SIZE + LEAF_NODE_NUM_CELLS_SIZE
 
     LEAF_NODE_KEY_SIZE = 4
     LEAF_NODE_KEY_OFFSET = 0
@@ -44,6 +43,11 @@ const (
 
     LEAF_NODE_RIGHT_SPLIT_COUNT = (LEAF_NODE_MAX_CELLS + 1) / 2
     LEAF_NODE_LEFT_SPLIT_COUNT = (LEAF_NODE_MAX_CELLS + 1) - LEAF_NODE_RIGHT_SPLIT_COUNT
+
+    LEAF_NODE_NEXT_LEAF_SIZE = 4
+    LEAF_NODE_NEXT_LEAF_OFFSET = LEAF_NODE_NUM_CELLS_OFFSET + LEAF_NODE_NUM_CELLS_SIZE
+    LEAF_NODE_HEADER_SIZE = COMMON_NODE_HEADER_SIZE + LEAF_NODE_NUM_CELLS_SIZE + LEAF_NODE_NEXT_LEAF_SIZE
+
 
     INTERNAL_NODE_NUM_KEYS_SIZE = 4
     INTERNAL_NODE_NUM_KEYS_OFFSET = COMMON_NODE_HEADER_SIZE
@@ -120,10 +124,25 @@ func GetLeafNodeValue(node []byte, cellNum uint32) []byte {
     return cell[LEAF_NODE_KEY_SIZE:]
 }
 
+func GetLeafNodeNextLeaf(node []byte) uint32 {
+    return binary.LittleEndian.Uint32(
+        node[LEAF_NODE_NEXT_LEAF_OFFSET:LEAF_NODE_NEXT_LEAF_OFFSET+LEAF_NODE_NEXT_LEAF_SIZE],
+    )
+}
+
+func SetLeafNodeNextLeaf(node []byte, nextLeaf uint32) {
+    binary.LittleEndian.PutUint32(
+        node[LEAF_NODE_NEXT_LEAF_OFFSET:LEAF_NODE_NEXT_LEAF_OFFSET+LEAF_NODE_NEXT_LEAF_SIZE],
+        nextLeaf,
+    )
+}
+
+
 func InitializeLeafNode(node []byte) {
     SetNodeType(node, NODE_LEAF)
     SetNodeRoot(node, false)
     SetLeafNodeNumCells(node, 0)
+    SetLeafNodeNextLeaf(node, 0)
 }
 
 func InitializeInternalNode(node []byte) {
@@ -383,6 +402,8 @@ func SplitAndInsertLeafNode(cursor *Cursor, key uint32, value *Row) {
     nn := GetPage(cursor.Table.Pager, npn)
 
     InitializeLeafNode(nn)
+    SetLeafNodeNextLeaf(nn, GetLeafNodeNextLeaf(on))
+    SetLeafNodeNextLeaf(on, npn)
 
     for i := int(LEAF_NODE_MAX_CELLS); i >= 0; i-- {
 
@@ -405,6 +426,7 @@ func SplitAndInsertLeafNode(cursor *Cursor, key uint32, value *Row) {
                 value,
                 GetLeafNodeValue(dn, uint32(iwn)),
             )
+            SetLeafNodeKey(dn, uint32(iwn), key)
         } else if i > int(cursor.CellNum) {
             copy(dst, GetLeafNodeCell(on, uint32(i - 1)))
         } else {
