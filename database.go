@@ -65,22 +65,20 @@ func CursorValue(cursor *Cursor) []byte {
 }
 
 func CursorAdvance(cursor *Cursor) {
+    node := GetPage(cursor.Table.Pager, cursor.PageNum)
 
-    // Page number
-    pn := cursor.PageNum
-    node := GetPage(cursor.Table.Pager, pn)
+    cursor.CellNum++
 
-    cursor.CellNum = cursor.CellNum + 1
     if cursor.CellNum >= GetLeafNodeNumCells(node) {
-        npn := GetLeafNodeNextLeaf(node)
-        if npn == 0 {
+        nextPageNum := GetLeafNodeNextLeaf(node)
+
+        if nextPageNum == 0 {
             cursor.EndOfTable = true
         } else {
-            cursor.PageNum = npn
+            cursor.PageNum = nextPageNum
             cursor.CellNum = 0
         }
     }
-
 }
 
 func SerializeRow(row *Row, destination []byte) {
@@ -129,27 +127,20 @@ type Cursor struct {
 }
 
 func StartTable(table *Table) *Cursor {
+    pageNum := table.RootPageNum
+    node := GetPage(table.Pager, pageNum)
 
-    c := &Cursor{
-        Table: table,
-        PageNum: table.RootPageNum,
-        CellNum: 0,
+    for GetNodeType(node) == NODE_INTERNAL {
+        pageNum = GetInternalNodeChild(node, 0)
+        node = GetPage(table.Pager, pageNum)
     }
 
-    // Root node
-    rn := GetPage(table.Pager, table.RootPageNum)
-
-    // # of cells
-    nc := GetLeafNodeNumCells(rn)
-
-    if nc == 0 {
-        c.EndOfTable = true
-    } else {
-        c.EndOfTable = false
+    return &Cursor{
+        Table:      table,
+        PageNum:    pageNum,
+        CellNum:    0,
+        EndOfTable: GetLeafNodeNumCells(node) == 0,
     }
-
-    return c
-
 }
 
 // func EndTable(table *Table) *Cursor {
