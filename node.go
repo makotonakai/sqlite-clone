@@ -5,6 +5,7 @@ package main
 import (
     "os"
     "fmt"
+    "math"
 	"encoding/binary"
 )
 
@@ -59,6 +60,8 @@ const (
     INTERNAL_NODE_CHILD_SIZE = 4
     INTERNAL_NODE_CELL_SIZE = INTERNAL_NODE_CHILD_SIZE + INTERNAL_NODE_KEY_SIZE
     INTERNAL_NODE_MAX_CELLS = 3
+
+    INVALID_PAGE_NUM = math.MaxUint32
 
 )
 
@@ -150,6 +153,7 @@ func InitializeInternalNode(node []byte) {
     SetNodeType(node, NODE_INTERNAL)
     SetNodeRoot(node, false)
     SetInternalNodeNumKeys(node, 0)
+    SetInternalNodeRightChild(node, INVALID_PAGE_NUM)
 }
 
 func GetInternalNodeNumKeys(node []byte) uint32 {
@@ -171,10 +175,10 @@ func GetInternalNodeRightChild(node []byte) uint32 {
     )
 }
 
-func SetInternalNodeRightChild(node []byte, child uint32) {
+func SetInternalNodeRightChild(node []byte, c uint32) {
     binary.LittleEndian.PutUint32(
         node[INTERNAL_NODE_RIGHT_CHILD_OFFSET : INTERNAL_NODE_RIGHT_CHILD_OFFSET+INTERNAL_NODE_RIGHT_CHILD_SIZE],
-        child,
+        c,
     )
 }
 
@@ -184,11 +188,8 @@ func GetInternalNodeCell(node []byte, cellNum uint32) []byte {
 }
 
 func GetInternalNodeChild(node []byte, cn uint32) uint32 {
-
-    // Num keys
     nk := GetInternalNodeNumKeys(node)
 
-    // Child num
     if cn > nk {
         fmt.Printf(
             "Tried to access child_num %d > num_keys %d\n",
@@ -199,7 +200,16 @@ func GetInternalNodeChild(node []byte, cn uint32) uint32 {
     }
 
     if cn == nk {
-        return GetInternalNodeRightChild(node)
+        rc := GetInternalNodeRightChild(node)
+
+        if rc == INVALID_PAGE_NUM {
+            fmt.Printf(
+                "Tried to access right c of node, but was invalid page\n",
+            )
+            os.Exit(1)
+        }
+
+        return rc
     }
 
     cell := GetInternalNodeCell(node, cn)
@@ -209,28 +219,28 @@ func GetInternalNodeChild(node []byte, cn uint32) uint32 {
     )
 }
 
-func SetInternalNodeChild(node []byte, childNum uint32, childPageNum uint32) {
-    numKeys := GetInternalNodeNumKeys(node)
+func SetInternalNodeChild(node []byte, cn uint32, cpn uint32) {
+    nk := GetInternalNodeNumKeys(node)
 
-    if childNum > numKeys {
+    if cn > nk {
         fmt.Printf(
             "Tried to access child_num %d > num_keys %d\n",
-            childNum,
-            numKeys,
+            cn,
+            nk,
         )
         os.Exit(1)
     }
 
-    if childNum == numKeys {
-        SetInternalNodeRightChild(node, childPageNum)
+    if cn == nk {
+        SetInternalNodeRightChild(node, cpn)
         return
     }
 
-    cell := GetInternalNodeCell(node, childNum)
+    cell := GetInternalNodeCell(node, cn)
 
     binary.LittleEndian.PutUint32(
         cell[:INTERNAL_NODE_CHILD_SIZE],
-        childPageNum,
+        cpn,
     )
 }
 
@@ -255,10 +265,10 @@ func SetInternalNodeKey(node []byte, keyNum uint32, key uint32) {
 
 func FindInternalNodeChild(node []byte, key uint32) uint32 {
     // node := GetPage(table.Pager, pn)
-    numKeys := GetInternalNodeNumKeys(node)
+    nk := GetInternalNodeNumKeys(node)
 
     minIndex := uint32(0)
-    maxIndex := numKeys
+    maxIndex := nk
 
     for minIndex != maxIndex {
         index := (minIndex + maxIndex) / 2
@@ -301,11 +311,12 @@ func FindInternalNode(table *Table, pn uint32, key uint32) *Cursor {
 
 }
 
-func GetNodeMaxKey(node []byte) uint32 {
+func GetNodeMaxKey(pager *Pager, node []byte) uint32 {
     switch GetNodeType(node) {
     case NODE_INTERNAL:
-        numKeys := GetInternalNodeNumKeys(node)
-        return GetInternalNodeKey(node, numKeys-1)
+        rightChild := GetInternalNodeRightChild(node)
+        rightNode := GetPage(pager, rightChild)
+        return GetNodeMaxKey(pager, rightNode)
 
     case NODE_LEAF:
         numCells := GetLeafNodeNumCells(node)
@@ -411,10 +422,10 @@ func GetNodeParent(node []byte) uint32 {
     )
 }
 
-func SetNodeParent(node []byte, parentPageNum uint32) {
+func SetNodeParent(node []byte, ppn uint32) {
     binary.LittleEndian.PutUint32(
         node[PARENT_POINTER_OFFSET : PARENT_POINTER_OFFSET+PARENT_POINTER_SIZE],
-        parentPageNum,
+        ppn,
     )
 }
 
@@ -424,7 +435,7 @@ func SplitAndInsertLeafNode(cursor *Cursor, key uint32, value *Row) {
     on := GetPage(cursor.Table.Pager, cursor.PageNum)
 
     // Old max
-    om := GetNodeMaxKey(on)
+    om := GetNodeMaxKey(cursor.Table.Pager, on)
     
     // New page number
     npn := GetUnusedPageNum(cursor.Table.Pager)
@@ -473,14 +484,14 @@ func SplitAndInsertLeafNode(cursor *Cursor, key uint32, value *Row) {
     if (IsNodeRoot(on)) {
         CreateNewRoot(cursor.Table, npn)
     } else {
-        // fmt.Printf("Need to implement updating parent after split\n")
+        // fmt.Printf("Need to implement updating p after split\n")
         // os.Exit(1)
 
         // Parent page num
         ppn := GetNodeParent(on)
 
         // New max
-        nm := GetNodeMaxKey(on)
+        nm := GetNodeMaxKey(cursor.Table.Pager, on)
 
         // Parent
         p := GetPage(cursor.Table.Pager, ppn)
@@ -492,29 +503,158 @@ func SplitAndInsertLeafNode(cursor *Cursor, key uint32, value *Row) {
 
 }
 
+func SplitAndInsertInternalNode(table *Table, ppn uint32, cpn uint32) {
+    // Old page num
+    opn := ppn
+
+    // Old Node
+    on := GetPage(table.Pager, opn)
+
+    // Old max
+    om := GetNodeMaxKey(table.Pager, on)
+
+    // Child
+    c := GetPage(table.Pager, cpn)
+
+    // Child max
+    cm := GetNodeMaxKey(table.Pager, c)
+
+    // New page num
+    npn := GetUnusedPageNum(table.Pager)
+
+    // Splitting root
+    sr := IsNodeRoot(on)
+
+    var p []byte
+    var nn []byte
+
+    if sr {
+        // The old root will become the left c.
+        opn = GetInternalNodeChild(on, 0)
+        on = GetPage(table.Pager, opn)
+
+        // Parent
+        p = GetPage(table.Pager, table.RootPageNum)
+
+        // New node
+        nn = GetPage(table.Pager, npn)
+        InitializeInternalNode(nn)
+    } else {
+        p = GetPage(table.Pager, GetNodeParent(on))
+        nn = GetPage(table.Pager, npn)
+        InitializeInternalNode(nn)
+    }
+
+    // Old num keys
+    onk := GetInternalNodeNumKeys(on)
+
+    // Move the old right c into the new node.
+    // Current page num
+    cpn = GetInternalNodeRightChild(on)
+    current := GetPage(table.Pager, cpn)
+
+    InsertInternalNode(table, npn, cpn)
+    SetNodeParent(current, npn)
+
+    SetInternalNodeRightChild(on, INVALID_PAGE_NUM)
+
+    // Move the children above the middle into the new node.
+    for i := INTERNAL_NODE_MAX_CELLS - 1; i > INTERNAL_NODE_MAX_CELLS/2; i-- {
+        cpn = GetInternalNodeChild(on, uint32(i))
+        current = GetPage(table.Pager, cpn)
+
+        InsertInternalNode(table, npn, cpn)
+        SetNodeParent(current, npn)
+
+        onk--
+    }
+
+    // The c immediately before the middle becomes
+    // the old node's right c.
+    SetInternalNodeRightChild(
+        on,
+        GetInternalNodeChild(on, onk-1),
+    )
+    onk--
+
+    SetInternalNodeNumKeys(on, onk)
+
+    // Decide which half receives the c being inserted.
+    // Max after split
+    mas := GetNodeMaxKey(table.Pager, on)
+
+    // Destination page num
+    dpn := opn
+
+    if cm >= mas {
+        dpn = npn
+    }
+
+    InsertInternalNode(table, dpn, cpn)
+    SetNodeParent(c, dpn)
+
+    // Update the p's key for the old node.
+    UpdateInternalNodeKey(
+        p,
+        om,
+        GetNodeMaxKey(table.Pager, on),
+    )
+
+    if sr {
+        // The root already points to the old root's replacement structure.
+        // CreateNewRoot has established the root.
+    } else {
+        // Parent page num
+        ppn := GetNodeParent(on)
+
+        InsertInternalNode(
+            table,
+            ppn,
+            npn,
+        )
+
+        SetNodeParent(nn, ppn)
+    }
+}
+
 func CreateNewRoot(table *Table, rcpn uint32) {
     /*
     Handle splitting the root.
-    Old root copied to new page, becomes left child.
-    Address of right child passed in.
+    Old root copied to new page, becomes left c.
+    Address of right c passed in.
     Re-initialize root page to contain the new root node.
     New root node points to two children.
     */
 
     root := GetPage(table.Pager, table.RootPageNum)
 
-    // right child
+    // right c
     rc := GetPage(table.Pager, rcpn)
 
-    // left child page num
+    // left c page num
     lcpn := GetUnusedPageNum(table.Pager)
 
-    // left child
+    // left c
     lc := GetPage(table.Pager, lcpn)
 
-    /* Left child has data copied from old root */
+    if GetNodeType(root) == NODE_INTERNAL {
+        InitializeInternalNode(rc)
+        InitializeInternalNode(lc)
+    }
+
+    /* Left c has data copied from old root */
     // memcpy(left_child, root, PAGE_SIZE);
     copy(lc, root)
+
+    if GetNodeType(lc) == NODE_INTERNAL {
+       var c []byte
+       for i := 0; uint32(i) < GetInternalNodeNumKeys(lc); i++ {
+            c = GetPage(table.Pager, GetInternalNodeChild(lc, uint32(i)))
+            SetNodeParent(c, lcpn)
+       } 
+       c = GetPage(table.Pager, GetInternalNodeRightChild(lc))
+       SetNodeParent(c, lcpn)
+    }
 
     // set_node_root(left_child, false);
     SetNodeRoot(lc, false)
@@ -533,8 +673,8 @@ func CreateNewRoot(table *Table, rcpn uint32) {
     SetInternalNodeChild(root, 0, lcpn)
 
     // uint32_t left_child_max_key = get_node_max_key(left_child);
-    // Left child max key 
-    lcmk := GetNodeMaxKey(lc)
+    // Left c max key 
+    lcmk := GetNodeMaxKey(table.Pager, lc)
 
     // *internal_node_key(root, 0) = left_child_max_key;
     SetInternalNodeKey(root, 0, lcmk)
@@ -573,27 +713,32 @@ func InsertInternalNode(table *Table, ppn uint32, cpn uint32) {
     c := GetPage(table.Pager, cpn)
 
     // Child max key
-    cmk := GetNodeMaxKey(c)
+    cmk := GetNodeMaxKey(table.Pager, c)
     idx := FindInternalNodeChild(p, cmk)
 
     // Original Num Keys
     onk := GetInternalNodeNumKeys(p)
-    SetInternalNodeNumKeys(p, onk+1)
 
     if onk >= INTERNAL_NODE_MAX_CELLS {
-        fmt.Printf("Need to implement splitting internal node\n")
-        os.Exit(1)
+        SplitAndInsertInternalNode(table, ppn, cpn)
+        return
     }
 
-    // Right child page num
+    // Right c page num
     rcpn := GetInternalNodeRightChild(p)
 
-    // Right child
-    rc := GetPage(table.Pager, rcpn)
+    if rcpn == INVALID_PAGE_NUM {
+        SetInternalNodeRightChild(p, cpn)
+        return
+    }
 
-    if cmk > GetNodeMaxKey(rc) {
+    // Right c
+    rc := GetPage(table.Pager, rcpn)
+    SetInternalNodeNumKeys(p, onk+1)
+
+    if cmk > GetNodeMaxKey(table.Pager, rc) {
         SetInternalNodeChild(p, onk, rcpn)
-        SetInternalNodeKey(p, onk, GetNodeMaxKey(rc))
+        SetInternalNodeKey(p, onk, GetNodeMaxKey(table.Pager, rc))
         SetInternalNodeRightChild(p, cpn)
     } else {
         for i := 0; uint32(i) > idx; i-- {
